@@ -1,13 +1,16 @@
-
+using Conductor.Client.Models;
+using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using RestSharp;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
 using System.IO;
 using System.Linq;
+using System.Net.Mime;
 using System.Text;
-using Newtonsoft.Json;
-using RestSharp;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Conductor.Client
@@ -148,6 +151,7 @@ namespace Conductor.Client
 
         /// <summary>
         /// Makes the HTTP request (Sync).
+        /// If the token is expired then retrying the api call with refreshed Token 
         /// </summary>
         /// <param name="path">URL path.</param>
         /// <param name="method">HTTP method.</param>
@@ -160,6 +164,55 @@ namespace Conductor.Client
         /// <param name="contentType">Content Type of the request</param>
         /// <returns>Object</returns>
         public Object CallApi(
+            String path, Method method, List<KeyValuePair<String, String>> queryParams, Object postBody,
+            Dictionary<String, String> headerParams, Dictionary<String, String> formParams,
+            Dictionary<String, FileParameter> fileParams, Dictionary<String, String> pathParams,
+            String contentType, Configuration configuration = null)
+        {
+            int retryCount = 0;
+            RestResponse response = RetryRestClientCallApi(path, method, queryParams, postBody, headerParams,
+                formParams, fileParams, pathParams, contentType, configuration, ref retryCount);
+
+            return (Object)response;
+        }
+
+        private RestResponse RetryRestClientCallApi(String path, Method method, List<KeyValuePair<String, String>> queryParams, Object postBody,
+            Dictionary<String, String> headerParams, Dictionary<String, String> formParams,
+            Dictionary<String, FileParameter> fileParams, Dictionary<String, String> pathParams,
+            String contentType, Configuration configuration, ref int retryCount)
+        {
+            RestResponse response = null;
+            while (retryCount < Constants.MAX_TOKEN_REFRESH_RETRY_COUNT)
+            {
+                var request = PrepareRequest(
+                path, method, queryParams, postBody, headerParams, formParams, fileParams,
+                pathParams, contentType);
+
+                InterceptRequest(request);
+                response = RestClient.Execute(request, method);
+                InterceptResponse(request, response);
+                FormatHeaders(response);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    var JsonContent = JsonConvert.DeserializeObject<JObject>(response.Content);
+
+                    if (JsonContent["error"].ToString() == "EXPIRED_TOKEN")
+                    {
+                        string refreshToken = configuration.GetRefreshToken();
+                        headerParams["X-Authorization"] = refreshToken;
+                        retryCount++;
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
+            return response;
+        }
+
+        public async Task<object> CallApiAsync(
             String path, RestSharp.Method method, List<KeyValuePair<String, String>> queryParams, Object postBody,
             Dictionary<String, String> headerParams, Dictionary<String, String> formParams,
             Dictionary<String, FileParameter> fileParams, Dictionary<String, String> pathParams,
@@ -170,10 +223,10 @@ namespace Conductor.Client
                 pathParams, contentType);
 
             InterceptRequest(request);
-            var response = RestClient.Execute(request, method);
+            var response = await RestClient.ExecuteAsync(request, method);
             InterceptResponse(request, response);
             FormatHeaders(response);
-            return (Object)response;
+            return (object)response;
         }
 
         public async Task<object> CallApiAsync(
