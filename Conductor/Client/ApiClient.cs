@@ -229,23 +229,6 @@ namespace Conductor.Client
             return (object)response;
         }
 
-        public async Task<object> CallApiAsync(
-            String path, RestSharp.Method method, List<KeyValuePair<String, String>> queryParams, Object postBody,
-            Dictionary<String, String> headerParams, Dictionary<String, String> formParams,
-            Dictionary<String, FileParameter> fileParams, Dictionary<String, String> pathParams,
-            String contentType)
-        {
-            var request = PrepareRequest(
-                path, method, queryParams, postBody, headerParams, formParams, fileParams,
-                pathParams, contentType);
-
-            InterceptRequest(request);
-            var response = await RestClient.ExecuteAsync(request, method);
-            InterceptResponse(request, response);
-            FormatHeaders(response);
-            return (object)response;
-        }
-
         /// <summary>
         /// To combine the header of same key with different value into one.
         /// </summary>
